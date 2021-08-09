@@ -60,8 +60,8 @@ The `Uno` and `ESP8622` code is separted into two directories and is written in 
 |`ArduinoOTA`|over-the-air updates|Arduino|`Arduino` support|
 |`ArduinoJSON`|JSON support|[u8x8lib](https://github.com/olikraus/u8g2)|`OLED` `I2C` display routines|
 |`ESP8266ClientSecure`|secure web requests|`Wire`|`I2C` communication|
-|`ESP8266WiFi`|WiFi control|||
-|`ESP8266mDNS`|multi-cast DNS support|||
+|`ESP8266WiFi`|WiFi control|`Adafruit_BME280`|BME280 communication|
+|`ESP8266mDNS`|multi-cast DNS support|`AltSoftSerial`|2nd serial communication port|
 |`TZ`|timezone information|||
 |`coredecls`|NTP callback support|||
 |`time`|deal with time|||
@@ -99,10 +99,9 @@ CREATE TABLE `readings` (
 ## Notes
 
 1. `SSID` and `WiFi` password are configured in the `ESP8622` `C++` code.
-2. The power draw of the entire system maxes out what the `Uno` can provide and can cause stability issues.
-3. Update the `hostname` in `post_handler` to your location of `SensorPod.php` in the `Uno` `C++` code.
-4. Set the `ZIP` code in `relayUVIdx` to your location in the `ESP8622` `C++` code.
-5. The `SHA-1` `fingerprint` for the [National Weather Service](https://www.weatheer.gov) in `relayWeatherFC` needs regular updating in the `ESP8622` `C++` code.
+2. Update the `hostname` in `post_handler` to your location of `SensorPod.php` in the `Uno` `C++` code.
+3. Set the `ZIP` code in `relayUVIdx` to your location in the `ESP8622` `C++` code.
+4. The `SHA-1` `fingerprint` for the [National Weather Service](https://www.weatheer.gov) in `relayWeatherFC` needs regular updating in the `ESP8622` `C++` code.
 
 ## BSD-3 License
 

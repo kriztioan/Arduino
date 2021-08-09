@@ -12,143 +12,49 @@
 void post_handler();
 void updateUVI_handler();
 
-volatile struct DSM501 {
+struct DSM501 {
   struct {
-    unsigned long duration; // in ms
-    unsigned long um;       // in us
-    unsigned long low;      // in ms
-    unsigned long high;     // in ms
+    unsigned long start; // in ms
+    unsigned long low;   // in ms
     float pm;
-    void (*rising)(void);
-    void (*falling)(void);
     char pm_str[4];
     uint8_t pin;
-    uint8_t samples;
   } pm[DSM501NPMS];
   uint8_t state;
 } dsm501;
 
-void pm10_rising() {
-  unsigned long um = micros();
-  if (dsm501.pm[DSM501PM10].um == 0)
-    dsm501.pm[DSM501PM10].um = um;
-  dsm501.pm[DSM501PM10].samples += 1;
-  dsm501.pm[DSM501PM10].low += ((um - dsm501.pm[DSM501PM10].um) / 1000ul); // ms
-  dsm501.pm[DSM501PM10].um = um;
-  attachInterrupt(dsm501.pm[DSM501PM10].pin, dsm501.pm[DSM501PM10].falling,
-                  FALLING);
-}
-
-void pm10_falling() {
-  unsigned long um = micros();
-  dsm501.pm[DSM501PM10].high +=
-      ((um - dsm501.pm[DSM501PM10].um) / 1000ul); // ms
-  dsm501.pm[DSM501PM10].um = um;
-  attachInterrupt(dsm501.pm[DSM501PM10].pin, dsm501.pm[DSM501PM10].rising,
-                  RISING);
-}
-
-void pm25_rising() {
-  unsigned long um = micros();
-  if (dsm501.pm[DSM501PM25].um == 0)
-    dsm501.pm[DSM501PM25].um = um;
-  dsm501.pm[DSM501PM25].samples += 1;
-  dsm501.pm[DSM501PM25].low += ((um - dsm501.pm[DSM501PM25].um) / 1000ul); // ms
-  dsm501.pm[DSM501PM25].um = um;
-  attachInterrupt(dsm501.pm[DSM501PM25].pin, dsm501.pm[DSM501PM25].falling,
-                  FALLING);
-}
-
-void pm25_falling() {
-  unsigned long um = micros();
-  dsm501.pm[DSM501PM25].high += ((um - dsm501.pm[DSM501PM25].um) / 1000ul);
-  dsm501.pm[DSM501PM25].um = um;
-  attachInterrupt(dsm501.pm[DSM501PM25].pin, dsm501.pm[DSM501PM25].rising,
-                  RISING);
-}
-
 #define DSM501_WARMUP 0
 #define DSM501_MEASURE 1
-#define DSM501_WINDOW 3600000ul // 1 hour in ms
 
 void dsm_start() {
 
   pinMode(DSM501PM10_PIN, INPUT);
   pinMode(DSM501PM25_PIN, INPUT);
 
-  dsm501.pm[DSM501PM10].pin = digitalPinToInterrupt(DSM501PM10_PIN);
-  dsm501.pm[DSM501PM25].pin = digitalPinToInterrupt(DSM501PM25_PIN);
-
-  dsm501.pm[DSM501PM10].rising = pm10_rising;
-  dsm501.pm[DSM501PM25].rising = pm25_rising;
-
-  dsm501.pm[DSM501PM10].falling = pm10_falling;
-  dsm501.pm[DSM501PM25].falling = pm25_falling;
-
-  dtostrf(dsm501.pm[DSM501PM10].pm, 3, 0, (char *)dsm501.pm[DSM501PM10].pm_str);
-  dtostrf(dsm501.pm[DSM501PM25].pm, 3, 0, (char *)dsm501.pm[DSM501PM25].pm_str);
-
-  attachInterrupt(dsm501.pm[DSM501PM10].pin, dsm501.pm[DSM501PM10].rising,
-                  RISING);
-  attachInterrupt(dsm501.pm[DSM501PM25].pin, dsm501.pm[DSM501PM25].rising,
-                  RISING);
+  dsm501.pm[DSM501PM10].pin = DSM501PM10_PIN;
+  dsm501.pm[DSM501PM25].pin = DSM501PM25_PIN;
 
   dsm501.state = DSM501_MEASURE;
+
+  for (uint8_t i = 0; i < DSM501NPMS; i++)
+    dsm501.pm[i].start = millis();
 }
 
 void dsm_loop() {
   switch (dsm501.state) {
   case DSM501_MEASURE: {
     for (uint8_t i = 0; i < DSM501NPMS; i++) {
-      if (dsm501.pm[i].samples >= 32) { // at least 32 samples
-        detachInterrupt(dsm501.pm[i].pin);
-        unsigned long frame = dsm501.pm[i].high + dsm501.pm[i].low; // ms
-        float r = 100.0f * (float)dsm501.pm[i].low / (float)frame,  // %
-            pm = 0.000328773f * r * r * r - 0.00368712f * r * r +
-                 0.117507f * r - 0.0420336f; // mg/m3
-
-        /*Serial.print("i: ");
-        Serial.print(i);
-        Serial.print(" samples: ");
-        Serial.print(dsm501.pm[ i ].samples);
-        Serial.print(" frame: ");
-        Serial.print(frame);
-        Serial.print(" high: ");
-        Serial.print(dsm501.pm[ i ].high);
-        Serial.print(" low: ");
-        Serial.print(dsm501.pm[ i ].low);
-        Serial.print(" duration: ");
-        Serial.print(dsm501.pm[ i ].duration);
-        Serial.print(" r: ");
-        Serial.print(r);
-        Serial.print(" pm: ");
-        Serial.print(pm);*/
-
-        if (pm > 0.0f) {
-          if ((dsm501.pm[i].duration + frame) >
-              DSM501_WINDOW) { // running average over DSM501_WINDOW
-            dsm501.pm[i].pm = pm * (float)frame +
-                              dsm501.pm[i].pm * (float)(DSM501_WINDOW - frame);
-            dsm501.pm[i].duration = DSM501_WINDOW;
-          } else {
-            dsm501.pm[i].pm = pm * (float)frame +
-                              dsm501.pm[i].pm * (float)dsm501.pm[i].duration;
-            dsm501.pm[i].duration += frame;
-          }
-          dsm501.pm[i].pm /= (float)dsm501.pm[i].duration;
-        }
-
-        /*Serial.print(" pm_avg: ");
-        Serial.print(dsm501.pm[ i ].pm);*/
+      dsm501.pm[i].low += pulseIn(dsm501.pm[i].pin, LOW);
+      unsigned int duration = dsm501.pm[i].start - millis();
+      if (duration >= 30000ul) { // at least 30s
+        float r = 0.1f * (float)dsm501.pm[i].low / (float)duration; // %
+        dsm501.pm[i].pm = 0.000328773f * r * r * r - 0.00368712f * r * r +
+                          0.117507f * r - 0.0420336f; // mg/m3
 
         dtostrf(dsm501.pm[i].pm, 3, 0, (char *)dsm501.pm[i].pm_str);
 
-        /*Serial.print(" pm_dsp: ");
-        Serial.println((char *) dsm501.pm[ i ].pm_str);*/
-
-        dsm501.pm[i].um = dsm501.pm[i].high = dsm501.pm[i].low = 0ul;
-        dsm501.pm[i].samples = 0;
-        attachInterrupt(dsm501.pm[i].pin, dsm501.pm[i].rising, RISING);
+        dsm501.pm[i].low = 0ul;
+        dsm501.pm[i].start = millis();
       }
     }
   } break;
@@ -189,7 +95,7 @@ void bme_loop() {
   }
 }
 
-uint16_t uv_error, post_error, wfc_error, wifi_error, ntp_error;
+uint16_t uv_error, post_error, wfc_error, wifi_error = 503, ntp_error;
 
 struct WeatherFC {
   float temperature;
@@ -746,6 +652,11 @@ void wifi_handler() {
       wifi_error = 0;
       for (uint8_t i = 0; i < 2; i++)
         wifi_error |= (ESP8266.read() << (i * 8));
+      if (wifi_error != 200) {
+        Serial.print(F("WiFi error "));
+        Serial.println(wifi_error);
+      } else
+        Serial.println(F("WiFi is connected"));
       queue_reset();
     }
     break;
@@ -811,7 +722,7 @@ void setup() {
 
   Wire.begin();
 
-  Serial.println(F("Ready"));
+  Serial.println(F("Uno Ready"));
 }
 
 struct Timer {
@@ -875,8 +786,8 @@ void loop() {
 
   ms = millis();
   if ((ms - timers.NTP.timer) >= timers.NTP.delay) {
-    timers.NTP.timer = ms;
-    if (queue.stage == QUEUE_IDLE) {
+    if (queue.stage == QUEUE_IDLE && wifi_error == 200) {
+      timers.NTP.timer = ms;
       queue_start(updateNTPTime_handler);
       if (timers.NTP.delay < timers.NTP.interval)
         timers.NTP.delay = timers.NTP.interval;
@@ -885,7 +796,7 @@ void loop() {
 
   ms = millis();
   if ((ms - timers.weather.timer) >= timers.weather.delay) {
-    if (queue.stage == QUEUE_IDLE) {
+    if (queue.stage == QUEUE_IDLE && wifi_error == 200) {
       timers.weather.timer = ms;
       queue_start(updateWeather_handler);
       if (timers.weather.delay < timers.weather.interval)
@@ -923,7 +834,7 @@ void loop() {
 
   ms = millis();
   if ((ms - timers.post.timer) >= timers.post.delay) {
-    if (queue.stage == QUEUE_IDLE) {
+    if (queue.stage == QUEUE_IDLE && wifi_error == 200) {
       timers.post.timer = ms;
       queue_start(post_handler);
     }
