@@ -14,9 +14,9 @@ void updateUVI_handler();
 
 struct DSM501 {
   struct {
-    unsigned long start; // in ms
-    unsigned long low;   // in ms
-    float pm;
+    unsigned long t0; // in ms
+    unsigned long dt; // in ms
+    float r;          // in %
     char pm_str[4];
     uint8_t pin;
   } pm[DSM501NPMS];
@@ -37,25 +37,38 @@ void dsm_start() {
   dsm501.state = DSM501_MEASURE;
 
   for (uint8_t i = 0; i < DSM501NPMS; i++)
-    dsm501.pm[i].start = millis();
+    dsm501.pm[i].t0 = millis(); // in ms
 }
 
 void dsm_loop() {
   switch (dsm501.state) {
   case DSM501_MEASURE: {
     for (uint8_t i = 0; i < DSM501NPMS; i++) {
-      dsm501.pm[i].low += pulseIn(dsm501.pm[i].pin, LOW);
-      unsigned int duration = dsm501.pm[i].start - millis();
-      if (duration >= 30000ul) { // at least 30s
-        float r = 0.1f * (float)dsm501.pm[i].low / (float)duration; // %
-        dsm501.pm[i].pm = 0.000328773f * r * r * r - 0.00368712f * r * r +
-                          0.117507f * r - 0.0420336f; // mg/m3
+      unsigned long pulse = pulseIn(dsm501.pm[i].pin, LOW, 240000ul),
+                    ms = millis(),
+                    dt = ms - dsm501.pm[i].t0; // in ms
 
-        dtostrf(dsm501.pm[i].pm, 3, 0, (char *)dsm501.pm[i].pm_str);
+      dsm501.pm[i].t0 = ms;
 
-        dsm501.pm[i].low = 0ul;
-        dsm501.pm[i].start = millis();
+      float r = 0.1f * (float)pulse / (float)dt; // in %
+
+      if (dsm501.pm[i].dt >= 3600000ul) {
+        dsm501.pm[i].r = ((float)dsm501.pm[i].dt * dsm501.pm[i].r + (float)dt * r) /
+                         (float)(dsm501.pm[i].dt + dt);
+        dsm501.pm[i].dt = 3600000ul;
+      } else {
+        dsm501.pm[i].r = (float)dsm501.pm[i].dt * dsm501.pm[i].r + (float)dt * r;
+        dsm501.pm[i].dt += dt;
+        dsm501.pm[i].r /= (float)dsm501.pm[i].dt;
       }
+
+      r = dsm501.pm[i].r;
+
+      float pm = 0.000328773f * r * r * r - 0.00368712f * r * r +
+                 0.117507f * r - 0.0420336f; // in mg/m3
+
+      if (pm > 0.0f)
+        dtostrf(pm, 3, 0, (char *)dsm501.pm[i].pm_str);
     }
   } break;
   case DSM501_WARMUP:
@@ -691,7 +704,6 @@ void websiteFromURL_handler() {
     }
   } break;
   case QUEUE_TIMEOUT:
-    // url_error = 408;
     Serial.println(F("URL handler timed out"));
   }
 }
@@ -806,7 +818,7 @@ void loop() {
 
   ms = millis();
   if ((ms - timers.uv.timer) >= timers.uv.delay) {
-    if (queue.stage == QUEUE_IDLE) {
+    if (queue.stage == QUEUE_IDLE && wifi_error == 200) {
       timers.uv.timer = ms;
       queue_start(updateUVI_handler);
       if (timers.uv.delay < timers.uv.interval)
