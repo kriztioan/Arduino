@@ -9,6 +9,8 @@
 #define DSM501PM25 1
 #define DSM501NPMS 2
 
+#define DSM501WINDOW 3600000ul
+
 void post_handler();
 void updateUVI_handler();
 
@@ -50,22 +52,18 @@ void dsm_loop() {
 
       dsm501.pm[i].t0 = ms;
 
-      float r = 0.1f * (float)pulse / (float)dt; // in %
+      dsm501.pm[i].r =
+          ((float)dsm501.pm[i].dt * dsm501.pm[i].r + 0.1f * (float)pulse);
+      dsm501.pm[i].dt += dt;
+      dsm501.pm[i].r /= (float)dsm501.pm[i].dt;
 
-      if (dsm501.pm[i].dt >= 3600000ul) {
-        dsm501.pm[i].r = ((float)dsm501.pm[i].dt * dsm501.pm[i].r + (float)dt * r) /
-                         (float)(dsm501.pm[i].dt + dt);
-        dsm501.pm[i].dt = 3600000ul;
-      } else {
-        dsm501.pm[i].r = (float)dsm501.pm[i].dt * dsm501.pm[i].r + (float)dt * r;
-        dsm501.pm[i].dt += dt;
-        dsm501.pm[i].r /= (float)dsm501.pm[i].dt;
-      }
+      if (dsm501.pm[i].dt > DSM501WINDOW)
+        dsm501.pm[i].dt = DSM501WINDOW;
 
-      r = dsm501.pm[i].r;
-
-      float pm = 0.000328773f * r * r * r - 0.00368712f * r * r +
-                 0.117507f * r - 0.0420336f; // in mg/m3
+      float pm =
+          0.000328773f * dsm501.pm[i].r * dsm501.pm[i].r * dsm501.pm[i].r -
+          0.00368712f * dsm501.pm[i].r * dsm501.pm[i].r +
+          0.117507f * dsm501.pm[i].r - 0.0420336f; // in mg/m3
 
       if (pm > 0.0f)
         dtostrf(pm, 3, 0, (char *)dsm501.pm[i].pm_str);
