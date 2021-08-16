@@ -24,6 +24,7 @@ label|part
 -----|----
 |BAT1|coin cell battery|
 |C1|2.2mF electrolytic capacitor|
+|C2|47uF ceramic capacitor|
 |D1|diode|
 |D2|diode|
 |DSM501|DSM501|
@@ -98,10 +99,11 @@ CREATE TABLE `readings` (
 
 ## Notes
 
-1. `SSID` and `WiFi` password are configured in the `ESP8622` `C++` code.
-2. Update the `hostname` in `post_handler` to your location of `SensorPod.php` in the `Uno` `C++` code.
-3. Set the `ZIP` code in `relayUVIdx` to your location in the `ESP8622` `C++` code.
-4. The `SHA-1` `fingerprint` for the [National Weather Service](https://www.weatheer.gov) in `relayWeatherFC` needs regular updating in the `ESP8622` `C++` code.
+1. Vin is assumed to be at 5V, otherwise use the 5V power pin directly.
+2. `SSID` and `WiFi` password are configured in the `ESP8622` `C++` code.
+3. Update the `hostname` in `post_handler` to your location of `SensorPod.php` in the `Uno` `C++` code.
+4. Set the `ZIP` code in `relayUVIdx` to your location in the `ESP8622` `C++` code.
+5. The `SHA-1` `fingerprint` for the [National Weather Service](https://www.weatheer.gov) in `relayWeatherFC` needs regular updating in the `ESP8622` `C++` code.
 
 ## BSD-3 License
 
