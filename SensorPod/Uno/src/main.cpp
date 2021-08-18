@@ -1,3 +1,12 @@
+/**
+ *  @file    main.cpp
+ *  @brief   Sensor Pod
+ *  @author  KrizTioaN (christiaanboersma@hotmail.com)
+ *  @date    2021-08-06
+ *  @note    BSD-3 licensed
+ *
+ ***********************************************/
+
 #include <Arduino.h>
 #include <U8x8lib.h>
 #include <Wire.h>
@@ -212,6 +221,8 @@ void toggle_screen() {
 
     NOTE PIN 10 DOES NOT ALLOW PWM
 */
+
+#define ESP8266_RST_PIN 4
 
 AltSoftSerial ESP8266;
 
@@ -652,7 +663,11 @@ void post_handler() {
   }
 }
 
+#define WIFI_MAX_FAIL 4
+
 void wifi_handler() {
+
+  static uint8_t wifi_fail = 0;
 
   switch (queue.stage) {
   case QUEUE_EXEC:
@@ -666,14 +681,21 @@ void wifi_handler() {
       if (wifi_error != 200) {
         Serial.print(F("WiFi error "));
         Serial.println(wifi_error);
-      } else
-        Serial.println(F("WiFi is connected"));
+      }
+      wifi_fail = 0;
       queue_reset();
     }
     break;
   case QUEUE_TIMEOUT:
     wifi_error = 408;
     Serial.println(F("WiFi handler timed out"));
+    if (++wifi_fail >= WIFI_MAX_FAIL) {
+      wifi_fail = 0;
+      Serial.println(F("Maximum number of fails reached: resetting ESP8622"));
+      digitalWrite(ESP8266_RST_PIN, LOW);
+      delayMicroseconds(20);
+      digitalWrite(ESP8266_RST_PIN, HIGH);
+    }
   }
 }
 
@@ -727,7 +749,9 @@ void setup() {
   dtostrf(bme.readHumidity(), 4, 1, sv.humidity_str);
   dtostrf(bme.readPressure() / 1e5, 4, 2, sv.pressure_str);
 
-  Serial.println(F("Connecting to ESP8266"));
+  Serial.println(F("Enable ESP8266"));
+  pinMode(ESP8266_RST_PIN, OUTPUT);
+  digitalWrite(ESP8266_RST_PIN, HIGH);
   ESP8266.begin(19200);
 
   Wire.begin();
