@@ -115,6 +115,51 @@ void bme_loop() {
   }
 }
 
+#include <AltSoftSerial.h>
+
+/*  AltSofSerial hardcoded pins:
+
+    RX_PIN = 8;
+    TX_PIN = 9;
+
+    NOTE PIN 10 DOES NOT ALLOW PWM
+*/
+
+#define ESP8266_RST_PIN 4
+
+AltSoftSerial ESP8266;
+
+#define WIFI_OK 0
+#define WIFI_FAILED 1
+#define WIFI_MAX_FAIL 4
+
+uint8_t wifi_fail = 0;
+
+void wifi_loop() {
+
+  static uint8_t state = WIFI_OK;
+
+  static unsigned long ms = 0ul;
+
+  switch (state) {
+  case WIFI_FAILED:
+    if (millis() - ms >= 1000ul) { // waited 1s
+      digitalWrite(ESP8266_RST_PIN, HIGH);
+      wifi_fail = 0;
+      state = WIFI_OK;
+    }
+    break;
+  case WIFI_OK:
+  default:
+    if (wifi_fail >= WIFI_MAX_FAIL) {
+      Serial.println(F("Maximum number of fails reached: resetting ESP8622"));
+      digitalWrite(ESP8266_RST_PIN, LOW);
+      state = WIFI_FAILED;
+      ms = millis();
+    }
+  }
+}
+
 uint16_t uv_error, post_error, wfc_error, wifi_error = 503, ntp_error;
 
 struct WeatherFC {
@@ -211,20 +256,6 @@ void toggle_screen() {
   screen.state = !screen.state;
   u8x8.setPowerSave(screen.state);
 }
-
-#include <AltSoftSerial.h>
-
-/*  AltSofSerial hardcoded pins:
-
-    RX_PIN = 8;
-    TX_PIN = 9;
-
-    NOTE PIN 10 DOES NOT ALLOW PWM
-*/
-
-#define ESP8266_RST_PIN 4
-
-AltSoftSerial ESP8266;
 
 // 1kOhm resistor in voltage divider
 #define KLS6_PIN 0
@@ -400,7 +431,7 @@ void default_handler() {
 #define QUEUE_START 1
 #define QUEUE_EXEC 2
 #define QUEUE_ACT 3
-#define QUEUE_BLOCK 4
+#define QUEUE_FAILED 4
 #define QUEUE_TIMEOUT 5
 
 struct HandlerQueue {
@@ -421,10 +452,18 @@ void queue_start(void (*handler)()) {
   queue.stage = QUEUE_EXEC;
 }
 
+void queue_reset() {
+
+  queue.handler = default_handler;
+  queue.stage = QUEUE_IDLE;
+}
+
 void queue_execute(const __FlashStringHelper *cmd) {
 
   if (ESP8266.read() != 0x06) {
-    Serial.println(F("Invalid response"));
+    queue.stage = QUEUE_FAILED;
+    queue.handler();
+    queue_reset();
     return;
   }
   ESP8266.print(cmd);
@@ -434,17 +473,13 @@ void queue_execute(const __FlashStringHelper *cmd) {
 void queue_execute(const char *cmd) {
 
   if (ESP8266.read() != 0x06) {
-    Serial.println(F("Invalid response"));
+    queue.stage = QUEUE_FAILED;
+    queue.handler();
+    queue_reset();
     return;
   }
   ESP8266.print(cmd);
   queue.stage = QUEUE_ACT;
-}
-
-void queue_reset() {
-
-  queue.handler = default_handler;
-  queue.stage = QUEUE_IDLE;
 }
 
 void queue_loop() {
@@ -466,7 +501,7 @@ typedef uint8_t BUTTON;
 #define BUTTON3 3
 #define BUTTON4 4
 
-void button_handler() {
+void button_loop() {
 
   static BUTTON p_button = BUTTON0;
 
@@ -544,6 +579,10 @@ void updateNTPTime_handler() {
       queue_reset();
     }
     break;
+  case QUEUE_FAILED:
+    ntp_error = 502;
+    Serial.println(F("NTP handler got an unexpected response"));
+    break;
   case QUEUE_TIMEOUT:
     ntp_error = 408;
     Serial.println(F("NTP handler timed out"));
@@ -584,6 +623,10 @@ void updateWeather_handler() {
       queue_reset();
     }
     break;
+  case  QUEUE_FAILED:
+    wfc_error = 502;
+    Serial.println(F("Weather handler got an unexpected response"));
+    break;
   case QUEUE_TIMEOUT:
     wfc_error = 408;
     Serial.println(F("Weather handler timed out"));
@@ -618,6 +661,10 @@ void updateUVI_handler() {
       }
       queue_reset();
     }
+    break;
+  case QUEUE_FAILED:
+    uv_error = 502;
+    Serial.println(F("UV handler got an unexpected response"));
     break;
   case QUEUE_TIMEOUT:
     uv_error = 408;
@@ -657,17 +704,17 @@ void post_handler() {
       queue_reset();
     }
     break;
+  case QUEUE_FAILED:
+    post_error = 502;
+    Serial.println(F("Post handler got an unexpected response"));
+    break;
   case QUEUE_TIMEOUT:
     post_error = 408;
     Serial.println(F("Post handler timed out"));
   }
 }
 
-#define WIFI_MAX_FAIL 4
-
 void wifi_handler() {
-
-  static uint8_t wifi_fail = 0;
 
   switch (queue.stage) {
   case QUEUE_EXEC:
@@ -686,16 +733,14 @@ void wifi_handler() {
       queue_reset();
     }
     break;
+  case QUEUE_FAILED:
+    wifi_error = 502;
+    Serial.println(F("WiFi handler got an unexpected response"));
+    break;
   case QUEUE_TIMEOUT:
     wifi_error = 408;
     Serial.println(F("WiFi handler timed out"));
-    if (++wifi_fail >= WIFI_MAX_FAIL) {
-      wifi_fail = 0;
-      Serial.println(F("Maximum number of fails reached: resetting ESP8622"));
-      digitalWrite(ESP8266_RST_PIN, LOW);
-      delayMicroseconds(20);
-      digitalWrite(ESP8266_RST_PIN, HIGH);
-    }
+    ++wifi_fail;
   }
 }
 
@@ -723,12 +768,20 @@ void websiteFromURL_handler() {
         break;
     }
   } break;
+  case QUEUE_FAILED:
+    post_error = 502;
+    Serial.println(F("URL handler got an unexpected response"));
+    break;
   case QUEUE_TIMEOUT:
+    post_error = 408;
     Serial.println(F("URL handler timed out"));
   }
 }
 
 void setup() {
+
+  pinMode(ESP8266_RST_PIN, OUTPUT);
+  digitalWrite(ESP8266_RST_PIN, LOW);
 
   Serial.begin(115200);
 
@@ -749,12 +802,20 @@ void setup() {
   dtostrf(bme.readHumidity(), 4, 1, sv.humidity_str);
   dtostrf(bme.readPressure() / 1e5, 4, 2, sv.pressure_str);
 
+  Wire.begin();
+
+  Serial.print("Waiting for system to stabilize ");
+  u8x8.setFont(u8x8_font_chroma48medium8_r);
+  for (uint8_t i = 0; i < 5; i++) {
+    u8x8.draw2x2Glyph(u8x8.getCols() / 2 - 5 + i * 2, u8x8.getRows() / 2 - 1, '.');
+    delay(1000ul);
+    Serial.print('.');
+  }
+  u8x8.clearDisplay();
+  Serial.println();
   Serial.println(F("Enable ESP8266"));
-  pinMode(ESP8266_RST_PIN, OUTPUT);
   digitalWrite(ESP8266_RST_PIN, HIGH);
   ESP8266.begin(19200);
-
-  Wire.begin();
 
   Serial.println(F("Uno Ready"));
 }
@@ -776,6 +837,8 @@ struct Timers {
 };
 
 void loop() {
+
+  wifi_loop();
 
   if (ESP8266.available())
     queue.handler();
@@ -813,7 +876,7 @@ void loop() {
   unsigned long ms = millis();
   if ((ms - timers.button.timer) >= timers.button.delay) {
     timers.button.timer = ms;
-    button_handler();
+    button_loop();
     if (timers.button.delay > timers.button.interval)
       timers.button.delay = timers.button.interval;
   }
@@ -876,7 +939,7 @@ void loop() {
 
   ms = millis();
   if ((ms - timers.wifi.timer) >= timers.wifi.delay) {
-    if (queue.stage == QUEUE_IDLE) {
+    if (queue.stage == QUEUE_IDLE && wifi_fail < WIFI_MAX_FAIL) {
       timers.wifi.timer = ms;
       queue_start(wifi_handler);
     }
