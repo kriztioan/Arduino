@@ -27,66 +27,58 @@ void NTPCallback() {
   settimeofday_cb((TrivialCB) nullptr);
 }
 
-const char *ssid = "WIFI SSID";
-const char *password = "WIFI PASSWORD";
-const char *hostname = "SensorPod";
+PGM_P ssid = "WIFI SSID";
+PGM_P password = "WIFI PASSWORD";
+PGM_P hostname = "SensorPod";
 
 WiFiEventHandler wifi_connected, wifi_disconnected;
 
 void setup() {
 
   Serial.begin(19200);
-  Serial.print("\r\nBooting EPS8266\r\n");
-  Serial.printf("Chip-ID: %4x\r\n", ESP.getChipId());
-  Serial.printf("CPU: %d MHz\r\n", ESP.getCpuFreqMHz());
-  Serial.printf("Flash: %d MiB\r\n", ESP.getFlashChipRealSize() / 1024 / 1024);
-  Serial.printf("Speed: %d MHz\r\n", ESP.getFlashChipSpeed() / 1000000);
-  Serial.printf("Core: %s\r\n", ESP.getCoreVersion().c_str());
-  Serial.printf("SDK: %s\r\n", ESP.getSdkVersion());
-  Serial.printf("Free: %d KiB\r\n", ESP.getFreeSketchSpace() / 1024);
+  Serial.println(F("\r\nBooting EPS8266"));
+  Serial.printf_P(PSTR("Chip-ID: %4x\r\n"), ESP.getChipId());
+  Serial.printf_P(PSTR("CPU: %d MHz\r\n"), ESP.getCpuFreqMHz());
+  Serial.printf_P(PSTR("Flash: %d MiB\r\n"),
+                  ESP.getFlashChipRealSize() / 1024 / 1024);
+  Serial.printf_P(PSTR("Speed: %d MHz\r\n"), ESP.getFlashChipSpeed() / 1000000);
+  Serial.printf_P(PSTR("Core: %s\r\n"), ESP.getCoreVersion().c_str());
+  Serial.printf_P(PSTR("SDK: %s\r\n"), ESP.getSdkVersion());
+  Serial.printf_P(PSTR("Free: %d KiB\r\n"), ESP.getFreeSketchSpace() / 1024);
   byte mac[6];
   WiFi.macAddress(mac);
-  Serial.printf("MAC: %02x:%02x:%02x:%02x:%02x:%02x\r\n", mac[5], mac[4],
-                mac[3], mac[2], mac[1], mac[0]);
-  Serial.println("Connecting to WiFi");
+  Serial.printf_P(PSTR("MAC: %02x:%02x:%02x:%02x:%02x:%02x\r\n"), mac[5],
+                  mac[4], mac[3], mac[2], mac[1], mac[0]);
+  Serial.println(F("Connecting to WiFi"));
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
-  WiFi.hostname(hostname);
+  WiFi.hostname(FPSTR(hostname));
 
   wifi_connected =
       WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP &e) {
         wifi_status = 200;
-        Serial.printf("Hostname: %s\r\n", WiFi.hostname().c_str());
-        Serial.printf("Connected to %s using IP address %s\r\n",
-                      WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-        Serial.println("EPS8266 Ready");
+        Serial.printf_P(PSTR("Hostname: %s\r\n"), WiFi.hostname().c_str());
+        Serial.printf_P(PSTR("Connected to %s using IP address %s\r\n"),
+                        WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+        Serial.println(F("EPS8266 Ready"));
       });
 
   wifi_disconnected = WiFi.onStationModeDisconnected(
       [](const WiFiEventStationModeDisconnected &e) {
         wifi_status = 410;
         wifi_timeout = millis();
-        Serial.println("Connection lost\r\nreconnecting ...");
+        Serial.println(F("Connection lost\r\nreconnecting ..."));
       });
 
-  WiFi.begin(ssid, password);
+  WiFi.begin(FPSTR(ssid), FPSTR(password));
   wifi_timeout = millis();
 
-  Serial.println("Configuring NTP\r\nUsing timezone America/Los_Angeles");
+  Serial.println(F("Configuring NTP\r\nUsing timezone America/Los_Angeles"));
   settimeofday_cb(NTPCallback);
   configTime(TZ_America_Los_Angeles, "pool.ntp.org");
 
-  ArduinoOTA.onStart([]() {
-    String type;
-
-    if (ArduinoOTA.getCommand() == U_FLASH)
-      type = "sketch";
-    else
-      type = "filesystem"; // U_FS
-
-    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-  });
+  ArduinoOTA.onStart([]() {});
 
   ArduinoOTA.onEnd([]() {});
 
@@ -102,7 +94,7 @@ void relayURL() {
   String host = Serial.readStringUntil('\n');
 
   if (host.length() == 0) {
-    Serial.println("Invalid host");
+    Serial.println(F("Invalid host"));
     Serial.write(0x04);
     return;
   }
@@ -110,12 +102,12 @@ void relayURL() {
   WiFiClient client;
 
   if (!client.connect(host, 80)) {
-    Serial.println("Connection failed");
+    Serial.println(F("Connection failed"));
     Serial.write(0x04);
     return;
   }
 
-  client.print("GET /index.php HTTP/1.0\r\nConnection: close\r\n\r\n");
+  client.print(F("GET /index.php HTTP/1.0\r\nConnection: close\r\n\r\n"));
 
   uint8_t pck_len = 56;
 
@@ -134,18 +126,18 @@ void relayURL() {
       while (!Serial.available()) {
         yield();
         if ((millis() - timeout) >= 5000ul) {
-          Serial.println("ACK timed out");
+          Serial.println(F("ACK timed out"));
           Serial.write(0x04);
           client.stop();
           return;
         }
       }
       if (Serial.read() != 0x06) {
-        Serial.println("Invalid response");
+        Serial.println(F("Invalid response"));
         break;
       }
     } else if ((millis() - timeout) >= 5000ul) {
-      Serial.println("Request timed out");
+      Serial.println(F("Request timed out"));
       break;
     }
   }
@@ -190,10 +182,10 @@ uint16_t getJSON(WiFiClient &client, const char *host, const char *path) {
   if (!client.connect(host, 443))
     return 1;
 
-  client.printf("GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: ESP8622 "
-                "(christiaanboersma@hotmail.com)\r\nAccept: "
-                "application/json\r\nConnection: close\r\n\r\n",
-                path, host);
+  client.printf_P(PSTR("GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: ESP8622 "
+                       "(christiaanboersma@hotmail.com)\r\nAccept: "
+                       "application/json\r\nConnection: close\r\n\r\n"),
+                  path, host);
 
   unsigned long timeout = millis();
   while (client.available() == 0)
@@ -204,13 +196,13 @@ uint16_t getJSON(WiFiClient &client, const char *host, const char *path) {
 
   client.readBytesUntil('\r', status, sizeof(status));
 
-  if (strncmp(status + 9, "200", 3) == 0) {
+  if (strncmp_P(status + 9, PSTR("200"), 3) == 0) {
     if (!client.find("\r\n\r\n"))
       return 9;
     return 200;
   }
 
-  if (strncmp(status + 9, "303", 3) == 0) {
+  if (strncmp_P(status + 9, PSTR("303"), 3) == 0) {
     if (!client.find("Location: "))
       return 4;
     if (!client.find("//"))
@@ -258,9 +250,21 @@ void relayUVIdx() {
     return;
   }
 
-  StaticJsonDocument<128> doc;
+  PGM_P key = "UV_INDEX";
 
-  DeserializationError error = deserializeJson(doc, client);
+  DynamicJsonDocument filter(ESP.getMaxFreeBlockSize() - 512);
+
+  filter[0][FPSTR(key)] = true;
+
+  filter.shrinkToFit();
+
+  DynamicJsonDocument doc(ESP.getMaxFreeBlockSize() - 512);
+
+  DeserializationError error =
+      deserializeJson(doc, client, DeserializationOption::Filter(filter));
+
+  doc.shrinkToFit();
+
   if (error) {
     uvi.error = 10;
     Serial.write((char *)&uvi, sizeof(struct UVIResponse));
@@ -268,14 +272,14 @@ void relayUVIdx() {
     return;
   }
 
-  if (!doc[0]["UV_INDEX"]) {
+  if (!doc[0][FPSTR(key)]) {
     uvi.error = 11;
     Serial.write((char *)&uvi, sizeof(struct UVIResponse));
     client.stop();
     return;
   }
 
-  uvi.uv = doc[0]["UV_INDEX"];
+  uvi.uv = doc[0][FPSTR(key)];
 
   client.stop();
 
@@ -311,46 +315,61 @@ void relayWeatherFC() {
     return;
   }
 
-  StaticJsonDocument<128> doc;
+  DynamicJsonDocument filter(ESP.getMaxFreeBlockSize() - 512);
 
-  DeserializationError error;
-  const char *keys[] = {
-      "\"temperature\": ", "\"dewpoint\": ", "\"windDirection\": ",
-      "\"windSpeed\": ",   "\"windGust\": ", "\"relativeHumidity\": "};
+  const char *keys[] = {"temperature", "dewpoint", "windDirection",
+                        "windSpeed",   "windGust", "relativeHumidity"};
+
+  PGM_P properties = "properties";
+  PGM_P value = "value";
+
+  for (int i = 0; i < 6; i++)
+    filter[properties][keys[i]][value] = true;
+
+  filter.shrinkToFit();
+
+  DynamicJsonDocument doc(ESP.getMaxFreeBlockSize() - 512);
+
+  DeserializationError error =
+      deserializeJson(doc, client, DeserializationOption::Filter(filter));
+
+  doc.shrinkToFit();
+
+  if (error) {
+    wfc.error = 7;
+    Serial.write((char *)&wfc, sizeof(struct WFCResponse));
+    client.stop();
+    return;
+  }
+
   for (int i = 0; i < 6; i++) {
-    if (!client.find(keys[i])) {
-      wfc.error = 6;
-      Serial.write((char *)&wfc, sizeof(struct WFCResponse));
-      client.stop();
-      return;
-    }
-    error = deserializeJson(doc, client);
-    if (error) {
-      wfc.error = 7;
-      Serial.write((char *)&wfc, sizeof(struct WFCResponse));
-      client.stop();
-      return;
-    }
+    JsonVariant var = doc[properties][keys[i]];
+    if (!var)
+      continue;
+
     switch (i) {
     case 0:
-      wfc.temperature = doc["value"];
+      wfc.temperature = var[value];
+      ;
       break;
     case 1:
-      wfc.dewpoint = doc["value"];
+      wfc.dewpoint = var[value];
+      ;
       break;
     case 2:
-      wfc.windDirection = doc["value"];
+      wfc.windDirection = var[value];
       break;
     case 3:
-      wfc.windSpeed = doc["value"];
+      wfc.windSpeed = var[value];
       break;
     case 4:
-      wfc.windGust = doc["value"];
+      wfc.windGust = var[value];
       break;
     case 5:
-      wfc.relativeHumidity = doc["value"];
+      wfc.relativeHumidity = var[value];
     }
   }
+
   client.stop();
 
   Serial.write((char *)&wfc, sizeof(struct WFCResponse));
@@ -374,11 +393,11 @@ void postJSONMsg() {
     return;
   }
 
-  client.printf("POST %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: ESP8622 "
-                "(christiaanboersma@hotmail.com)\r\nConnection: "
-                "close\r\nAccept: application/json\r\nContent-Type: "
-                "application/json\r\nContent-Length: %d\r\n\r\n%s",
-                path.c_str(), host.c_str(), json.length(), json.c_str());
+  client.printf_P(PSTR("POST %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: ESP8622 "
+                       "(christiaanboersma@hotmail.com)\r\nConnection: "
+                       "close\r\nAccept: application/json\r\nContent-Type: "
+                       "application/json\r\nContent-Length: %d\r\n\r\n%s"),
+                  path.c_str(), host.c_str(), json.length(), json.c_str());
 
   unsigned long timeout = millis();
   while (client.available() == 0) {
@@ -400,26 +419,26 @@ void loop() {
   ArduinoOTA.handle();
 
   if (wifi_status != 200 && (millis() - wifi_timeout) > 60000ul) {
-    Serial.println("Trying to connect to WiFi timed out ... restarting");
+    Serial.println(F("Trying to connect to WiFi timed out ... restarting"));
     ESP.restart();
   }
 
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     if (command.length() > 0) {
-      if (command == "WFC")
+      if (command == F("WFC"))
         relayWeatherFC();
-      else if (command == "PST")
+      else if (command == F("PST"))
         postJSONMsg();
-      else if (command == "UVI")
+      else if (command == F("UVI"))
         relayUVIdx();
-      else if (command == "NTP")
+      else if (command == F("NTP"))
         relayNTPBasedTime();
-      else if (command == "URL")
+      else if (command == F("URL"))
         relayURL();
-      else if (command == "WIF")
+      else if (command == F("WIF"))
         Serial.write((uint8_t *)&wifi_status, sizeof(wifi_status));
-      else if (command == "RSP")
+      else if (command == F("RSP"))
         Serial.write(0x06);
     }
   }
