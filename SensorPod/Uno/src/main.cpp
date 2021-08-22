@@ -864,7 +864,7 @@ void loop() {
                .timer = millis()}, // every 15m
       .weather = {.delay = 30000ul,
                   .interval = 1800000ul,
-                  .timer = millis()}, // after first 30s, then every 3h
+                  .timer = millis()}, // after first 30s, then every 30m
       .uv = {.delay = 30000ul,
              .interval = 3600000ul,
              .timer = millis()}, // after first 30s, then every 1h
