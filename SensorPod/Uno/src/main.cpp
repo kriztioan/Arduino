@@ -870,7 +870,7 @@ void loop() {
              .timer = millis()}, // after first 30s, then every 1h
       .NTP = {.delay = 30000ul,
               .interval = 18000000ul,
-              .timer = millis()} // after first 30s then every 30m
+              .timer = millis()} // after first 30s then every 5h
   };
 
   unsigned long ms = millis();
