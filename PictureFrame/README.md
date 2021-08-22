@@ -1,10 +1,37 @@
-# Arduino
+# Picture Frame
 
-A number of [`Arduino Uno`](https://www.arduino.cc/en/Main/arduinoBoardUno&gt;), [`ESP8266`](https://www.espressif.com/en/products/socs/esp8266), and [`ESP32`](https://www.espressif.com/en/products/socs/esp32) projects are available in subdirectories. Each project includes the wiring schematic, parts list, the `C++` code, and a short description on what the project does and how to use it.
+`Picture Frame` is an [`ESP32`](https://www.espressif.com/en/products/socs/esp32) digitial Picture Frame project. The TFT display is assumed 320x240 pixels in size, connected via `SPI`.
+
+## Schematic
+
+![Picture Frame Wiring Schematics](PictureFrame.png "Picture Frame Wiring Schematic")
+
+## Parts List
+
+label|part
+-----|----
+|U1|ESP32|
+|TFT1|320x240 TFT|
 
 ## Code
 
-All code is written in `C++` and can be compiled and uploaded to the `UNO`/`ESP8622`/`ESP32` using either the `Arduino IDE` or `PlatformIO`.
+The code is written in `C++` and can be compiled and uploaded to the `ESP32` using either the `Arduino IDE` or `PlatformIO`. The table below lists `Picture Frame`'s library dependencies together with the functionality they provide.
+
+|library|functionality|
+--------|--------------
+|`SPIFFS`|filesystem I/O|
+|[`TFT_eSP`](https://github.com/Bodmer/TFT_eSPI)|TFT communication|
+|`cstring`|`std::memcpy`|
+|`string`|`std::string`|
+|`vector`|`std::vector`|
+
+## Usage
+
+Bitmap ([`BMP`](https://en.wikipedia.org/wiki/BMP_file_format)) images 320x240 pixels in size should be uploaded to the `SPIFFS` [filesystem](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/spiffs.html). Following `PlatformIO`'s approach, the image files can be put in the `data`-directory. The image displayed will change randomly every 10s.
+
+## Notes
+
+1. Select a `FLASH` [partition table](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/partition-tables.html) that optimizes space for storing images.
 
 ## BSD-3 License
 
