@@ -8,7 +8,6 @@
  ***********************************************/
 
 #include <ArduinoJson.h>
-#include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <WiFiClientSecure.h>
@@ -22,9 +21,8 @@ uint16_t wifi_status = 425;
 unsigned long wifi_timeout;
 
 uint8_t NTPTimeValid = 0;
-void NTPCallback() {
+void NTPCallback(bool sntp) {
   NTPTimeValid = 1;
-  settimeofday_cb((TrivialCB) nullptr);
 }
 
 PGM_P ssid = "WIFI SSID";
@@ -77,16 +75,6 @@ void setup() {
   Serial.println(F("Configuring NTP\r\nUsing timezone America/Los_Angeles"));
   settimeofday_cb(NTPCallback);
   configTime(TZ_America_Los_Angeles, "pool.ntp.org");
-
-  ArduinoOTA.onStart([]() {});
-
-  ArduinoOTA.onEnd([]() {});
-
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {});
-
-  ArduinoOTA.onError([](ota_error_t error) {});
-
-  ArduinoOTA.begin();
 }
 
 void relayURL() {
@@ -415,8 +403,6 @@ void postJSONMsg() {
 }
 
 void loop() {
-
-  ArduinoOTA.handle();
 
   if (wifi_status != 200 && (millis() - wifi_timeout) > 60000ul) {
     Serial.println(F("Trying to connect to WiFi timed out ... restarting"));
