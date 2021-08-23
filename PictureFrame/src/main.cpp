@@ -38,13 +38,19 @@ int drawbmp(const char *filename) {
 
   file.readBytes(reinterpret_cast<char *>(&header), sizeof(header));
 
-  uint32_t width;
+  uint16_t sig;
+  std::memcpy(&sig, header, sizeof(sig));
 
-  std::memcpy(&width, header + 18, sizeof(int));
+  if(sig != 0x4d42) {
+    Serial.println("not a BMP image");
+    return 0;
+  }
+
+  uint32_t width;
+  std::memcpy(&width, header + 18, sizeof(width));
 
   uint32_t height;
-
-  std::memcpy(&height, header + 22, sizeof(int));
+  std::memcpy(&height, header + 22, sizeof(height));
 
   Serial.print("image size: ");
   Serial.print(width);
@@ -56,6 +62,17 @@ int drawbmp(const char *filename) {
     return 0;
   }
 
+  uint16_t bpp;
+  std::memcpy(&bpp, header + 28, sizeof(bpp));
+
+  Serial.print("bits per pixel: ");
+  Serial.println(bpp);
+
+  if(bpp != 24){
+    Serial.println("invalid bpp");
+    return 0;
+  }
+  
   const uint16_t padding = (4 - ((width * 3) & 3)) & 3,
                  padded = 3 * width + padding;
 
