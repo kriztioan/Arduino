@@ -38,7 +38,7 @@ label|part
 |R4|10kΩ resistor|
 |R5|10kΩ resistor|
 |R6|1kΩ resistor|
-|R7|1kΩ resistor|
+|R7|100kΩ resistor|
 |R8|1kΩ resistor|
 |R9|10kΩ resistor|
 |R10|10kΩ resistor|
