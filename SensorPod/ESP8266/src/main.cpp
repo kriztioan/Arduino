@@ -21,9 +21,7 @@ uint16_t wifi_status = 425;
 unsigned long wifi_timeout;
 
 uint8_t NTPTimeValid = 0;
-void NTPCallback(bool sntp) {
-  NTPTimeValid = 1;
-}
+void NTPCallback(bool sntp) { NTPTimeValid = 1; }
 
 PGM_P ssid = "WIFI SSID";
 PGM_P password = "WIFI PASSWORD";
@@ -31,23 +29,55 @@ PGM_P hostname = "SensorPod";
 
 WiFiEventHandler wifi_connected, wifi_disconnected;
 
+int log(Stream &str, const __FlashStringHelper *restrict_format, ...) {
+
+  time_t epoch = time(NULL);
+
+  struct tm *tm_s = localtime(&epoch);
+
+  char buf[64];
+  snprintf_P(buf, sizeof(buf), PSTR("%04d-%02d-%02d %02d:%02d:%02d: "),
+             1900 + tm_s->tm_year, tm_s->tm_mon + 1, tm_s->tm_mday,
+             tm_s->tm_hour, tm_s->tm_min, tm_s->tm_sec);
+
+  str.print(buf);
+
+  va_list args;
+
+  va_start(args, restrict_format);
+
+  int ret = vsnprintf_P(buf, sizeof(buf), (const char *)restrict_format, args);
+
+  str.println(buf);
+
+  va_end(args);
+
+  str.flush();
+
+  return (ret);
+}
+
 void setup() {
 
+  settimeofday_cb(NTPCallback);
+  configTime(TZ_America_Los_Angeles, "pool.ntp.org");
+
   Serial.begin(19200);
-  Serial.println(F("\r\nBooting EPS8266"));
-  Serial.printf_P(PSTR("Chip-ID: %4x\r\n"), ESP.getChipId());
-  Serial.printf_P(PSTR("CPU: %d MHz\r\n"), ESP.getCpuFreqMHz());
-  Serial.printf_P(PSTR("Flash: %d MiB\r\n"),
-                  ESP.getFlashChipRealSize() / 1024 / 1024);
-  Serial.printf_P(PSTR("Speed: %d MHz\r\n"), ESP.getFlashChipSpeed() / 1000000);
-  Serial.printf_P(PSTR("Core: %s\r\n"), ESP.getCoreVersion().c_str());
-  Serial.printf_P(PSTR("SDK: %s\r\n"), ESP.getSdkVersion());
-  Serial.printf_P(PSTR("Free: %d KiB\r\n"), ESP.getFreeSketchSpace() / 1024);
+  Serial.println();
+
+  log(Serial, F("Booting EPS8266"));
+  log(Serial, F("Chip-ID: %4x"), ESP.getChipId());
+  log(Serial, F("CPU: %d MHz"), ESP.getCpuFreqMHz());
+  log(Serial, F("Flash: %d MiB"), ESP.getFlashChipRealSize() / 1024 / 1024);
+  log(Serial, F("Speed: %d MHz"), ESP.getFlashChipSpeed() / 1000000);
+  log(Serial, F("Core: %s"), ESP.getCoreVersion().c_str());
+  log(Serial, F("SDK: %s"), ESP.getSdkVersion());
+  log(Serial, F("Free: %d KiB"), ESP.getFreeSketchSpace() / 1024);
   byte mac[6];
   WiFi.macAddress(mac);
-  Serial.printf_P(PSTR("MAC: %02x:%02x:%02x:%02x:%02x:%02x\r\n"), mac[5],
-                  mac[4], mac[3], mac[2], mac[1], mac[0]);
-  Serial.println(F("Connecting to WiFi"));
+  log(Serial, F("MAC: %02x:%02x:%02x:%02x:%02x:%02x"), mac[5], mac[4], mac[3],
+      mac[2], mac[1], mac[0]);
+  log(Serial, F("Connecting to WiFi"));
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
@@ -56,25 +86,23 @@ void setup() {
   wifi_connected =
       WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP &e) {
         wifi_status = 200;
-        Serial.printf_P(PSTR("Hostname: %s\r\n"), WiFi.hostname().c_str());
-        Serial.printf_P(PSTR("Connected to %s using IP address %s\r\n"),
-                        WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-        Serial.println(F("EPS8266 Ready"));
+        log(Serial, F("Hostname: %s"), WiFi.hostname().c_str());
+        log(Serial, F("Connected to %s using IP address %s"),
+            WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+        log(Serial, F("EPS8266 Ready"));
       });
 
   wifi_disconnected = WiFi.onStationModeDisconnected(
       [](const WiFiEventStationModeDisconnected &e) {
         wifi_status = 410;
         wifi_timeout = millis();
-        Serial.println(F("Connection lost\r\nreconnecting ..."));
+        log(Serial, F("Connection lost ... reconnecting"));
       });
 
   WiFi.begin(FPSTR(ssid), FPSTR(password));
   wifi_timeout = millis();
 
-  Serial.println(F("Configuring NTP\r\nUsing timezone America/Los_Angeles"));
-  settimeofday_cb(NTPCallback);
-  configTime(TZ_America_Los_Angeles, "pool.ntp.org");
+  log(Serial, F("Configured NTP with timezone America/Los_Angeles"));
 }
 
 void relayURL() {
@@ -82,7 +110,7 @@ void relayURL() {
   String host = Serial.readStringUntil('\n');
 
   if (host.length() == 0) {
-    Serial.println(F("Invalid host"));
+    log(Serial, F("Invalid host"));
     Serial.write(0x04);
     return;
   }
@@ -90,7 +118,7 @@ void relayURL() {
   WiFiClient client;
 
   if (!client.connect(host, 80)) {
-    Serial.println(F("Connection failed"));
+    log(Serial, F("Connection failed"));
     Serial.write(0x04);
     return;
   }
@@ -114,18 +142,18 @@ void relayURL() {
       while (!Serial.available()) {
         yield();
         if ((millis() - timeout) >= 5000ul) {
-          Serial.println(F("ACK timed out"));
+          log(Serial, F("ACK timed out"));
           Serial.write(0x04);
           client.stop();
           return;
         }
       }
       if (Serial.read() != 0x06) {
-        Serial.println(F("Invalid response"));
+        log(Serial, F("Invalid response"));
         break;
       }
     } else if ((millis() - timeout) >= 5000ul) {
-      Serial.println(F("Request timed out"));
+      log(Serial, F("Request timed out"));
       break;
     }
   }
@@ -292,7 +320,7 @@ void relayWeatherFC() {
   const char *host = "api.weather.gov",
              *path = "/stations/LOAC1/observations/latest",
              *fingerprint =
-                 "40 34 2C 79 4B 19 15 22 60 67 4D 4F 5B DE 60 5E B5 6D 09 55";
+                 "25 B9 6E 17 C4 8C E7 E6 27 8D EC 80 53 B9 42 0D EA AC 3E 94";
 
   client.setFingerprint(fingerprint);
 
@@ -405,7 +433,7 @@ void postJSONMsg() {
 void loop() {
 
   if (wifi_status != 200 && (millis() - wifi_timeout) > 60000ul) {
-    Serial.println(F("Trying to connect to WiFi timed out ... restarting"));
+    log(Serial, F("Trying to connect to WiFi timed out ... restarting"));
     ESP.restart();
   }
 

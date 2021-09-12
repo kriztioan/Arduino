@@ -101,7 +101,7 @@ if (
         title: 'timestamp [date-time]',
       },
       vAxis: {
-        title: 'measurement [% | log lx | \u2103 | mg/m\u00B3 | mbar]',
+        title: 'measurement [% | log lx | \u2103 | ug/m\u00B3 | mbar]',
       },
       explorer: {
         actions: ['dragToZoom', 'rightClickToReset'],

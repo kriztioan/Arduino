@@ -23,6 +23,7 @@
 void post_handler();
 void updateUVI_handler();
 
+int log(Stream &str, const __FlashStringHelper *restrict_format, ...);
 struct DSM501 {
   struct {
     unsigned long t0; // in ms
@@ -69,10 +70,13 @@ void dsm_loop() {
       if (dsm501.pm[i].dt > DSM501WINDOW)
         dsm501.pm[i].dt = DSM501WINDOW;
 
-      float pm =
-          0.000328773f * dsm501.pm[i].r * dsm501.pm[i].r * dsm501.pm[i].r -
-          0.00368712f * dsm501.pm[i].r * dsm501.pm[i].r +
-          0.117507f * dsm501.pm[i].r - 0.0420336f; // in mg/m3
+      /*float pm = 00.31778908f * pow(dsm501.pm[i].r, 3) -
+                 3.5669456f * pow(dsm501.pm[i].r, 2) +
+                 118.05720f * dsm501.pm[i].r - 50.607655f; // in ug/m3*/
+
+      float pm = 0.083701976 * pow(dsm501.pm[i].r, 3) +
+                 0.31207281f * pow(dsm501.pm[i].r, 2) +
+                 75.929237f * dsm501.pm[i].r - 68.798744f; // in ug/m3
 
       if (pm > 0.0f)
         dtostrf(pm, 3, 0, (char *)dsm501.pm[i].pm_str);
@@ -80,7 +84,7 @@ void dsm_loop() {
   } break;
   case DSM501_WARMUP:
     if (millis() > 60000ul) { // wait 1 minute to warm up
-      Serial.println(F("DSM501 ready"));
+      log(Serial, F("DSM501 ready"));
       dsm_start();
     }
   }
@@ -89,7 +93,7 @@ void dsm_loop() {
 #define SDD1306_ADDR 0x78
 U8X8_SSD1306_128X64_NONAME_HW_I2C u8x8(U8X8_PIN_NONE);
 
-#define PCF8583_ADDR (0xA2 >> 1)
+#define PCF8563_ADDR (0xA2 >> 1)
 
 #include <Adafruit_BME280.h>
 Adafruit_BME280 bme;
@@ -152,7 +156,7 @@ void wifi_loop() {
   case WIFI_OK:
   default:
     if (wifi_fail >= WIFI_MAX_FAIL) {
-      Serial.println(F("Maximum number of fails reached: resetting ESP8622"));
+      log(Serial, F("Maximum number of fails reached: resetting ESP8622"));
       digitalWrite(ESP8266_RST_PIN, LOW);
       state = WIFI_FAILED;
       ms = millis();
@@ -160,7 +164,8 @@ void wifi_loop() {
   }
 }
 
-uint16_t uv_error, post_error, wfc_error, wifi_error = 503, ntp_error;
+uint16_t uv_error = 503, post_error = 503, wfc_error = 503, wifi_error = 503,
+         ntp_error = 503;
 
 struct WeatherFC {
   float temperature;
@@ -177,7 +182,7 @@ uint8_t bcdToDec(byte value) { return ((value / 16) * 10 + value % 16); }
 
 uint8_t decToBcd(byte value) { return (value / 10 * 16 + value % 10); }
 
-struct PCF8583_DateTime {
+struct PCF8563_DateTime {
   uint8_t year;
   uint8_t month;
   uint8_t weekday;
@@ -188,7 +193,14 @@ struct PCF8583_DateTime {
   uint8_t vl;
 } DateTime;
 
-void PCF8583SetTime() {
+void PCF8563Init() {
+  uint8_t cfg[2] = {0x00, 0x00};
+  Wire.beginTransmission(PCF8563_ADDR);
+  Wire.write(cfg, sizeof(cfg));
+  Wire.endTransmission();
+}
+
+void PCF8563SetTime() {
 
   unsigned char raw[7];
 
@@ -200,21 +212,21 @@ void PCF8583SetTime() {
   raw[5] = decToBcd(DateTime.month);
   raw[6] = decToBcd(DateTime.year);
 
-  Wire.beginTransmission(PCF8583_ADDR);
+  Wire.beginTransmission(PCF8563_ADDR);
   Wire.write(0x02);
   Wire.write((uint8_t *)raw, sizeof(raw));
   Wire.endTransmission();
 }
 
-void PCF8583ReadTime() {
+void PCF8563ReadTime() {
 
-  Wire.beginTransmission(PCF8583_ADDR);
+  Wire.beginTransmission(PCF8563_ADDR);
   Wire.write(0x02);
   Wire.endTransmission();
 
   unsigned char raw[7];
   unsigned i = 0;
-  Wire.requestFrom(PCF8583_ADDR, 7);
+  Wire.requestFrom(PCF8563_ADDR, 7);
   while (Wire.available()) {
 
     raw[i] = Wire.read();
@@ -223,7 +235,7 @@ void PCF8583ReadTime() {
       break;
   }
 
-  DateTime.vl = (raw[0] & B10000000) >> 7;        // retrieve VL error bit
+  DateTime.vl = (raw[0] & B10000000) >> 7;        // extract VL error bit
   DateTime.second = bcdToDec(raw[0] & B01111111); // remove VL error bit
   DateTime.minute =
       bcdToDec(raw[1] & B01111111); // remove unwanted bits from MSB
@@ -233,6 +245,32 @@ void PCF8583ReadTime() {
   DateTime.month =
       bcdToDec(raw[5] & B00011111); // remove century bit, 1999 is over
   DateTime.year = bcdToDec(raw[6]);
+}
+
+int log(Stream &str, const __FlashStringHelper *restrict_format, ...) {
+
+  PCF8563ReadTime();
+
+  char buf[64];
+  snprintf_P(buf, sizeof(buf), PSTR("20%02d-%02d-%02d %02d:%02d:%02d: "),
+             DateTime.year, DateTime.month, DateTime.day, DateTime.hour,
+             DateTime.minute, DateTime.second);
+
+  str.print(buf);
+
+  va_list args;
+
+  va_start(args, restrict_format);
+
+  int ret = vsnprintf_P(buf, sizeof(buf), (const char *)restrict_format, args);
+
+  str.println(buf);
+
+  va_end(args);
+
+  str.flush();
+
+  return (ret);
 }
 
 #define SCREEN_CLOCK 0
@@ -284,7 +322,7 @@ void screen_draw_datetime() {
   const char *line PROGMEM = "________________";
   u8x8.drawString(0, 3, line);
 
-  PCF8583ReadTime();
+  PCF8563ReadTime();
   if (DateTime.vl == 1) {
 
     u8x8.setFont(u8x8_font_open_iconic_embedded_1x1);
@@ -322,7 +360,7 @@ void screen_draw_weather() {
 
   u8x8.setFont(u8x8_font_chroma48medium8_r);
 
-  PCF8583ReadTime();
+  PCF8563ReadTime();
 
   snprintf_P(buf, sizeof(buf), PSTR("%02d:%02d:%02d"), DateTime.hour,
              DateTime.minute, DateTime.second);
@@ -359,7 +397,7 @@ void screen_draw_sensors() {
   u8x8.drawGlyph(0, 0, 0x46);
   u8x8.setFont(u8x8_font_chroma48medium8_r);
 
-  PCF8583ReadTime();
+  PCF8563ReadTime();
 
   char buf[17], flt[5];
   snprintf_P(buf, sizeof(buf), PSTR("%02d:%02d:%02d"), DateTime.hour,
@@ -379,11 +417,11 @@ void screen_draw_sensors() {
   snprintf_P(buf, sizeof(buf), PSTR("pres:  %s bar"), sv.pressure_str);
   u8x8.drawString(0, 5, buf);
 
-  snprintf_P(buf, sizeof(buf), PSTR("pm10:%3s   mg/m3"),
+  snprintf_P(buf, sizeof(buf), PSTR("pm10: %4s ug/m3"),
              dsm501.pm[DSM501PM10].pm_str);
   u8x8.drawString(0, 6, buf);
 
-  snprintf_P(buf, sizeof(buf), PSTR("pm25:%3s   mg/m3"),
+  snprintf_P(buf, sizeof(buf), PSTR("pm25: %4s ug/m3"),
              dsm501.pm[DSM501PM25].pm_str);
   u8x8.drawString(0, 7, buf);
 }
@@ -394,7 +432,7 @@ void screen_draw_status() {
   u8x8.drawGlyph(0, 0, 0x42);
   u8x8.setFont(u8x8_font_chroma48medium8_r);
 
-  PCF8583ReadTime();
+  PCF8563ReadTime();
 
   char buf[17];
   snprintf_P(buf, sizeof(buf), PSTR("%02d:%02d:%02d"), DateTime.hour,
@@ -509,9 +547,9 @@ void button_loop() {
 
   int voltage = analogRead(BUTTON_PIN);
 
-  if (voltage > 205) {
-    if (voltage > 410) {
-      if (voltage > 615) {
+  if (voltage > 225) {
+    if (voltage > 450) {
+      if (voltage > 650) {
         if (voltage > 820)
           button = BUTTON4;
         else
@@ -572,20 +610,20 @@ void updateNTPTime_handler() {
       ntp_error = ntp.error;
       if (ntp_error == 200) {
         memcpy((char *)&DateTime, (char *)&ntp, 7);
-        PCF8583SetTime();
-        Serial.println(F("Time synced"));
+        PCF8563SetTime();
+        log(Serial, F("Time synced"));
       } else
-        Serial.println(F("Time not valid yet"));
+        log(Serial, F("Time not valid yet"));
       queue_reset();
     }
     break;
   case QUEUE_FAILED:
     ntp_error = 502;
-    Serial.println(F("NTP handler got an unexpected response"));
+    log(Serial, F("NTP handler got an unexpected response"));
     break;
   case QUEUE_TIMEOUT:
     ntp_error = 408;
-    Serial.println(F("NTP handler timed out"));
+    log(Serial, F("NTP handler timed out"));
   }
 }
 
@@ -615,21 +653,19 @@ void updateWeather_handler() {
       wfc_error = wfc.error;
       if (wfc.error == 200) {
         memcpy((char *)&weather, (char *)&wfc, sizeof(struct WeatherFC));
-        Serial.println(F("Weather synced"));
-      } else {
-        Serial.print(F("FC error "));
-        Serial.println(wfc.error);
-      }
+        log(Serial, F("Weather synced"));
+      } else
+        log(Serial, F("FC error %d"), wfc.error);
       queue_reset();
     }
     break;
-  case  QUEUE_FAILED:
+  case QUEUE_FAILED:
     wfc_error = 502;
-    Serial.println(F("Weather handler got an unexpected response"));
+    log(Serial, F("Weather handler got an unexpected response"));
     break;
   case QUEUE_TIMEOUT:
     wfc_error = 408;
-    Serial.println(F("Weather handler timed out"));
+    log(Serial, F("Weather handler timed out"));
   }
 }
 
@@ -654,21 +690,19 @@ void updateUVI_handler() {
       uv_error = uvi.error;
       if (uvi.error == 200) {
         uv = uvi.uv;
-        Serial.println(F("UV synced"));
-      } else {
-        Serial.print(F("UV error "));
-        Serial.println(uvi.error);
-      }
+        log(Serial, F("UV synced"));
+      } else
+        log(Serial, F("UV error %d"), uvi.error);
       queue_reset();
     }
     break;
   case QUEUE_FAILED:
     uv_error = 502;
-    Serial.println(F("UV handler got an unexpected response"));
+    log(Serial, F("UV handler got an unexpected response"));
     break;
   case QUEUE_TIMEOUT:
     uv_error = 408;
-    Serial.println(F("UV handler timed out"));
+    log(Serial, F("UV handler timed out"));
   }
 }
 
@@ -687,6 +721,7 @@ void post_handler() {
                DateTime.minute, DateTime.second, sv.temperature_str,
                sv.humidity_str, sv.pressure_str, photo_str,
                dsm501.pm[DSM501PM10].pm_str, dsm501.pm[DSM501PM25].pm_str);
+
     queue_execute(cmd);
     break;
   case QUEUE_ACT:
@@ -696,21 +731,20 @@ void post_handler() {
         code[i] = ESP8266.read();
       code[3] = '\0';
       post_error = atoi(code);
-      if (post_error != 200) {
-        Serial.print(F("Post error "));
-        Serial.println(code);
-      } else
-        Serial.println(F("Sensors posted"));
+      if (post_error != 200)
+        log(Serial, F("Post error %d"), code);
+      else
+        log(Serial, F("Sensors posted"));
       queue_reset();
     }
     break;
   case QUEUE_FAILED:
     post_error = 502;
-    Serial.println(F("Post handler got an unexpected response"));
+    log(Serial, F("Post handler got an unexpected response"));
     break;
   case QUEUE_TIMEOUT:
     post_error = 408;
-    Serial.println(F("Post handler timed out"));
+    log(Serial, F("Post handler timed out"));
   }
 }
 
@@ -725,21 +759,19 @@ void wifi_handler() {
       wifi_error = 0;
       for (uint8_t i = 0; i < 2; i++)
         wifi_error |= (ESP8266.read() << (i * 8));
-      if (wifi_error != 200) {
-        Serial.print(F("WiFi error "));
-        Serial.println(wifi_error);
-      }
+      if (wifi_error != 200)
+        log(Serial, F("WiFi error %d"), wifi_error);
       wifi_fail = 0;
       queue_reset();
     }
     break;
   case QUEUE_FAILED:
     wifi_error = 502;
-    Serial.println(F("WiFi handler got an unexpected response"));
+    log(Serial, F("WiFi handler got an unexpected response"));
     break;
   case QUEUE_TIMEOUT:
     wifi_error = 408;
-    Serial.println(F("WiFi handler timed out"));
+    log(Serial, F("WiFi handler timed out"));
     ++wifi_fail;
   }
 }
@@ -770,11 +802,11 @@ void websiteFromURL_handler() {
   } break;
   case QUEUE_FAILED:
     post_error = 502;
-    Serial.println(F("URL handler got an unexpected response"));
+    log(Serial, F("URL handler got an unexpected response"));
     break;
   case QUEUE_TIMEOUT:
     post_error = 408;
-    Serial.println(F("URL handler timed out"));
+    log(Serial, F("URL handler timed out"));
   }
 }
 
@@ -783,11 +815,15 @@ void setup() {
   pinMode(ESP8266_RST_PIN, OUTPUT);
   digitalWrite(ESP8266_RST_PIN, LOW);
 
+  Wire.begin();
+
+  PCF8563Init();
+
   Serial.begin(115200);
 
-  Serial.println(F("Booting Uno"));
+  log(Serial, F("Booting Uno"));
 
-  Serial.println(F("Turning off builtin LED"));
+  log(Serial, F("Turning off builtin LED"));
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
 
@@ -802,22 +838,21 @@ void setup() {
   dtostrf(bme.readHumidity(), 4, 1, sv.humidity_str);
   dtostrf(bme.readPressure() / 1e5, 4, 2, sv.pressure_str);
 
-  Wire.begin();
-
-  Serial.print("Waiting for system to stabilize ");
+  Serial.print(F("Waiting for system to stabilize "));
   u8x8.setFont(u8x8_font_chroma48medium8_r);
   for (uint8_t i = 0; i < 5; i++) {
-    u8x8.draw2x2Glyph(u8x8.getCols() / 2 - 5 + i * 2, u8x8.getRows() / 2 - 1, '.');
+    u8x8.draw2x2Glyph(u8x8.getCols() / 2 - 5 + i * 2, u8x8.getRows() / 2 - 1,
+                      '.');
     delay(1000ul);
     Serial.print('.');
   }
   u8x8.clearDisplay();
   Serial.println();
-  Serial.println(F("Enable ESP8266"));
+  log(Serial, F("Enabling ESP8266"));
   digitalWrite(ESP8266_RST_PIN, HIGH);
   ESP8266.begin(19200);
 
-  Serial.println(F("Uno Ready"));
+  log(Serial, F("Uno Ready!"));
 }
 
 struct Timer {
