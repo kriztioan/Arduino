@@ -11,14 +11,14 @@
 #include <U8x8lib.h>
 #include <Wire.h>
 
-#define DSM501PM10_PIN 2
-#define DSM501PM25_PIN 3
+#define DSM501PM1_0_PIN 2
+#define DSM501PM2_5_PIN 3
 
-#define DSM501PM10 0
-#define DSM501PM25 1
+#define DSM501PM1_0 0
+#define DSM501PM2_5 1
 #define DSM501NPMS 2
 
-#define DSM501WINDOW 3600000ul
+#define DSM501WINDOW 3600000ul // 1 hour in ms
 
 void post_handler();
 void updateUVI_handler();
@@ -29,22 +29,23 @@ struct DSM501 {
     unsigned long t0; // in ms
     unsigned long dt; // in ms
     float r;          // in %
-    char pm_str[4];
     uint8_t pin;
   } pm[DSM501NPMS];
+  char pm2_5_str[4];
+  char aqi2_5_str[4];
   uint8_t state;
-} dsm501;
+} dsm501 = {0};
 
 #define DSM501_WARMUP 0
 #define DSM501_MEASURE 1
 
 void dsm_start() {
 
-  pinMode(DSM501PM10_PIN, INPUT);
-  pinMode(DSM501PM25_PIN, INPUT);
+  pinMode(DSM501PM1_0_PIN, INPUT);
+  dsm501.pm[DSM501PM1_0].pin = DSM501PM1_0_PIN;
 
-  dsm501.pm[DSM501PM10].pin = DSM501PM10_PIN;
-  dsm501.pm[DSM501PM25].pin = DSM501PM25_PIN;
+  pinMode(DSM501PM2_5_PIN, INPUT);
+  dsm501.pm[DSM501PM2_5].pin = DSM501PM2_5_PIN;
 
   dsm501.state = DSM501_MEASURE;
 
@@ -55,8 +56,9 @@ void dsm_start() {
 void dsm_loop() {
   switch (dsm501.state) {
   case DSM501_MEASURE: {
+    float pm[DSM501NPMS];
     for (uint8_t i = 0; i < DSM501NPMS; i++) {
-      unsigned long pulse = pulseIn(dsm501.pm[i].pin, LOW, 240000ul),
+      unsigned long pulse = pulseInLong(dsm501.pm[i].pin, LOW, 240000ul),
                     ms = millis(),
                     dt = ms - dsm501.pm[i].t0; // in ms
 
@@ -70,16 +72,37 @@ void dsm_loop() {
       if (dsm501.pm[i].dt > DSM501WINDOW)
         dsm501.pm[i].dt = DSM501WINDOW;
 
-      /*float pm = 00.31778908f * pow(dsm501.pm[i].r, 3) -
-                 3.5669456f * pow(dsm501.pm[i].r, 2) +
-                 118.05720f * dsm501.pm[i].r - 50.607655f; // in ug/m3*/
+      // from datasheet, highest trace
+      pm[i] = -75.3446f + 80.3664f * dsm501.pm[i].r -
+              0.380702f * pow(dsm501.pm[i].r, 2) +
+              0.116638f * pow(dsm501.pm[i].r, 3); // in ug/m3
+    }
 
-      float pm = 0.083701976 * pow(dsm501.pm[i].r, 3) +
-                 0.31207281f * pow(dsm501.pm[i].r, 2) +
-                 75.929237f * dsm501.pm[i].r - 68.798744f; // in ug/m3
+    if (pm[DSM501PM2_5] > 0.0f)
+      pm[DSM501PM1_0] -= pm[DSM501PM2_5];
 
-      if (pm > 0.0f)
-        dtostrf(pm, 3, 0, (char *)dsm501.pm[i].pm_str);
+    if (pm[DSM501PM1_0] >= 0.0f) {
+
+      dtostrf(pm[DSM501PM1_0], 3, 0, (char *)dsm501.pm2_5_str);
+
+      float aqi;
+      if (pm[DSM501PM1_0] >= 0.0f && pm[DSM501PM1_0] <= 35.0f) {
+        aqi = 50.0f / 35.0f * pm[DSM501PM1_0];
+      } else if (pm[DSM501PM1_0] > 35.0f && pm[DSM501PM1_0] <= 75.0f) {
+        aqi = 50.0f + (50.0 / 40 * (pm[DSM501PM1_0] - 35));
+      } else if (pm[DSM501PM1_0] > 75.0f && pm[DSM501PM1_0] <= 115.0f) {
+        aqi = 100.0f + (50.0 / 40.0f * (pm[DSM501PM1_0] - 75.0f));
+      } else if (pm[DSM501PM1_0] > 115.0f && pm[DSM501PM1_0] <= 150.0f) {
+        aqi = 150.0f + (50.0 / 35.0f * (pm[DSM501PM1_0] - 115.0f));
+      } else if (pm[DSM501PM1_0] > 150.0f && pm[DSM501PM1_0] <= 250.0f) {
+        aqi = 200.0f + (100.0f / 100.0f * (pm[DSM501PM1_0] - 150.0f));
+      } else if (pm[DSM501PM1_0] > 250.0f && pm[DSM501PM1_0] <= 500.0f) {
+        aqi = 300.0f + (200.0f / 250.0f * (pm[DSM501PM1_0] - 250.0f));
+      } else if (pm[DSM501PM1_0] > 500.0f) {
+        aqi = 500.0f + (500.0f / 500.0f * (pm[DSM501PM1_0] - 500.0));
+      }
+
+      dtostrf(aqi, 3, 0, (char *)dsm501.aqi2_5_str);
     }
   } break;
   case DSM501_WARMUP:
@@ -417,12 +440,10 @@ void screen_draw_sensors() {
   snprintf_P(buf, sizeof(buf), PSTR("pres:  %s bar"), sv.pressure_str);
   u8x8.drawString(0, 5, buf);
 
-  snprintf_P(buf, sizeof(buf), PSTR("pm10: %4s ug/m3"),
-             dsm501.pm[DSM501PM10].pm_str);
+  snprintf_P(buf, sizeof(buf), PSTR("pm25:%3s ug/m3"), dsm501.pm2_5_str);
   u8x8.drawString(0, 6, buf);
 
-  snprintf_P(buf, sizeof(buf), PSTR("pm25: %4s ug/m3"),
-             dsm501.pm[DSM501PM25].pm_str);
+  snprintf_P(buf, sizeof(buf), PSTR("aqi :%3s"), dsm501.aqi2_5_str);
   u8x8.drawString(0, 7, buf);
 }
 
@@ -708,6 +729,8 @@ void updateUVI_handler() {
 
 void post_handler() {
 
+  static const char *null_str = "null";
+
   switch (queue.stage) {
   case QUEUE_EXEC:
     char cmd[192], photo_str[6];
@@ -716,11 +739,15 @@ void post_handler() {
                PSTR("PST\ntwonky.centralpark.lan\n/"
                     "sensors.php\n{\"timestamp\":\"20%02d-%02d-%02dT%02d:%02d:%"
                     "02d\",\"temperature\":%s,\"humidity\":%s,\"pressure\":%s,"
-                    "\"photo\":%s,\"pm10\":%s,\"pm25\":%s}\n"),
+                    "\"photo\":%s,\"pm2_5\":%s, \"aqi2_5\":%s}\n"),
                DateTime.year, DateTime.month, DateTime.day, DateTime.hour,
-               DateTime.minute, DateTime.second, sv.temperature_str,
-               sv.humidity_str, sv.pressure_str, photo_str,
-               dsm501.pm[DSM501PM10].pm_str, dsm501.pm[DSM501PM25].pm_str);
+               DateTime.minute, DateTime.second,
+               sv.temperature_str[0] ? sv.temperature_str : null_str,
+               sv.humidity_str[0] ? sv.humidity_str : null_str,
+               sv.pressure_str[0] ? sv.pressure_str : null_str,
+               photo_str[0] ? photo_str : null_str,
+               dsm501.pm2_5_str[0] ? dsm501.pm2_5_str : null_str,
+               dsm501.aqi2_5_str[0] ? dsm501.aqi2_5_str : null_str);
 
     queue_execute(cmd);
     break;
@@ -732,7 +759,7 @@ void post_handler() {
       code[3] = '\0';
       post_error = atoi(code);
       if (post_error != 200)
-        log(Serial, F("Post error %d"), code);
+        log(Serial, F("Post error %d"), post_error);
       else
         log(Serial, F("Sensors posted"));
       queue_reset();

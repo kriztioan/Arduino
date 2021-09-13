@@ -8,7 +8,7 @@
 - Humidity
 - Pressure
 - Brightness
-- Air quality (PM₁₀ and PM₂₅)
+- Air quality (PM<sub>2.5</sub> and AQI)
 
 The projects includes a `PHP` page for `Sensor Pod` to post to and that will graph with [`Google Charts`](https://developers.google.com/chart/) the readings when accessed from a web browser. The latter is demonstrated in the image below.
 
@@ -90,8 +90,8 @@ CREATE TABLE `readings` (
   `temperature` float DEFAULT NULL,
   `humidity` float DEFAULT NULL,
   `photo` float DEFAULT NULL,
-  `pm10` float DEFAULT NULL,
-  `pm25` float DEFAULT NULL,
+  `pm2_5` float DEFAULT NULL,
+  `aqi2_5` float DEFAULT NULL,
   `pressure` float DEFAULT NULL,
   PRIMARY KEY (`timestamp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

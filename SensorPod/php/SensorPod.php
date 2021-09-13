@@ -26,9 +26,14 @@ if (
   if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $json = file_get_contents('php://input');
     $d = json_decode($json);
-    $query = "INSERT INTO readings(timestamp, temperature, humidity, pressure, photo, pm10, pm25) VALUES (?, ?, ?, ?, ?, ?, ?)";
+    if (is_null($d)) {
+      echo "Failed to parse JSON";
+      http_response_code(500);
+      exit();
+    }
+    $query = "INSERT INTO readings(timestamp, temperature, humidity, pressure, photo, pm2_5, aqi2_5) VALUES (?, ?, ?, ?, ?, ?, ?)";
     $st = mysqli_prepare($link, $query);
-    mysqli_stmt_bind_param($st, 'sdddddd', $d->timestamp, $d->temperature, $d->humidity, $d->pressure, $d->photo, $d->pm10, $d->pm25);
+    mysqli_stmt_bind_param($st, 'sdddddd', $d->timestamp, $d->temperature, $d->humidity, $d->pressure, $d->photo, $d->pm2_5, $d->aqi2_5);
     if (!mysqli_stmt_execute($st)) http_response_code(400);
     else http_response_code(200);
     mysqli_close($link);
@@ -42,15 +47,15 @@ if (
       (object) array('label' => 'humidity', 'type' => 'number'),
       (object) array('label' => 'pressure', 'type' => 'number'),
       (object) array('label' => 'photo', 'type' => 'number'),
-      (object) array('label' => 'pm10', 'type' => 'number'),
-      (object) array('label' => 'pm25', 'type' => 'number')
+      (object) array('label' => 'pm2.5', 'type' => 'number'),
+      (object) array('label' => 'AQI', 'type' => 'number')
     ),
     'rows' => array()
   );
 
   $where = '';
   if (!empty($_GET['dt'])) $where = " WHERE timestamp > '" . $_GET['dt'] . "'";
-  $query = "SELECT DATE_FORMAT(timestamp, '%Y-%m-%dT%H:%i:%s') AS timestamp, temperature, humidity, pressure, LOG(photo) as photo, pm10, pm25 FROM readings" . $where;
+  $query = "SELECT DATE_FORMAT(timestamp, '%Y-%m-%dT%H:%i:%s') AS timestamp, temperature, humidity, pressure, LOG(photo) as photo, pm2_5, aqi2_5 FROM readings" . $where;
 
   $result = mysqli_query($link, $query);
   while ($row = mysqli_fetch_assoc($result)) {
@@ -62,8 +67,8 @@ if (
       (object) array('v' => floatval($row['humidity'])),
       (object) array('v' => (floatval($row['pressure']) - 1.0) * 1000),
       (object) array('v' => floatval($row['photo'])),
-      (object) array('v' => floatval($row['pm10'])),
-      (object) array('v' => floatval($row['pm25']))
+      (object) array('v' => floatval($row['pm2_5'])),
+      (object) array('v' => floatval($row['aqi2_5']))
     ));
   }
 
@@ -78,7 +83,7 @@ if (
 <html>
 
 <head>
-  <title>Sensors</title>
+  <title>SensorPod</title>
   <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
   <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
   <script type="text/javascript">
@@ -92,7 +97,7 @@ if (
     var board = null;
 
     var opt = {
-      title: 'Sensors',
+      title: 'SensorPod',
       curveType: 'none',
       legend: {
         position: 'right'
@@ -101,7 +106,7 @@ if (
         title: 'timestamp [date-time]',
       },
       vAxis: {
-        title: 'measurement [% | log lx | \u2103 | ug/m\u00B3 | mbar]',
+        title: 'measurement [% | log lx | \u2103 | \u03BCg/m\u00B3 | mbar]',
       },
       explorer: {
         actions: ['dragToZoom', 'rightClickToReset'],
