@@ -54,9 +54,9 @@ void dsm_start() {
 }
 
 void dsm_loop() {
+  static float pm[DSM501NPMS] = {0.0f};
   switch (dsm501.state) {
   case DSM501_MEASURE: {
-    float pm[DSM501NPMS];
     for (uint8_t i = 0; i < DSM501NPMS; i++) {
       unsigned long pulse = pulseInLong(dsm501.pm[i].pin, LOW, 240000ul),
                     ms = millis(),
@@ -81,7 +81,7 @@ void dsm_loop() {
     if (pm[DSM501PM2_5] > 0.0f)
       pm[DSM501PM1_0] -= pm[DSM501PM2_5];
 
-    if (pm[DSM501PM1_0] >= 0.0f) {
+    if (pm[DSM501PM1_0] >= 0.0f && pm[DSM501PM1_0] < 1000.0f) {
 
       dtostrf(pm[DSM501PM1_0], 3, 0, (char *)dsm501.pm2_5_str);
 
@@ -103,6 +103,9 @@ void dsm_loop() {
       }
 
       dtostrf(aqi, 3, 0, (char *)dsm501.aqi2_5_str);
+    } else {
+
+      dsm501.pm2_5_str[0] = dsm501.aqi2_5_str[0] = '\0';
     }
   } break;
   case DSM501_WARMUP:
