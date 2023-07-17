@@ -11,6 +11,8 @@
 #include <U8x8lib.h>
 #include <Wire.h>
 
+#define POST_SERVER_ADDRESS "SERVER ADDRESS/NAME"
+
 #define DSM501PM1_0_PIN 2
 #define DSM501PM2_5_PIN 3
 
@@ -58,9 +60,14 @@ void dsm_loop() {
   switch (dsm501.state) {
   case DSM501_MEASURE: {
     for (uint8_t i = 0; i < DSM501NPMS; i++) {
-      unsigned long pulse = pulseInLong(dsm501.pm[i].pin, LOW, 240000ul),
+      unsigned long pulse = pulseIn(dsm501.pm[i].pin, LOW, 240000ul),
                     ms = millis(),
                     dt = ms - dsm501.pm[i].t0; // in ms
+
+      if (i == DSM501PM2_5) {
+        // sensitivity correction per datasheet
+        pulse = 25 * pulse / 10;
+      }
 
       dsm501.pm[i].t0 = ms;
 
@@ -443,7 +450,7 @@ void screen_draw_sensors() {
   snprintf_P(buf, sizeof(buf), PSTR("pres:  %s bar"), sv.pressure_str);
   u8x8.drawString(0, 5, buf);
 
-  snprintf_P(buf, sizeof(buf), PSTR("pm25:%3s ug/m3"), dsm501.pm2_5_str);
+  snprintf_P(buf, sizeof(buf), PSTR("pm25:%3s   ug/m3"), dsm501.pm2_5_str);
   u8x8.drawString(0, 6, buf);
 
   snprintf_P(buf, sizeof(buf), PSTR("aqi :%3s"), dsm501.aqi2_5_str);
@@ -586,9 +593,9 @@ void button_loop() {
     button = BUTTON0;
 
   if (button != p_button) {
-    p_button = button;
     switch (button) {
     case BUTTON0:
+      log(Serial, F("BUTTON%d released"), p_button);
       break;
     case BUTTON1:
       toggle_screen();
@@ -605,6 +612,7 @@ void button_loop() {
       switch_screen();
       break;
     }
+    p_button = button;
   }
 }
 
@@ -739,7 +747,7 @@ void post_handler() {
     char cmd[192], photo_str[6];
     kls_read(photo_str);
     snprintf_P(cmd, sizeof(cmd),
-               PSTR("PST\ntwonky.centralpark.lan\n/"
+               PSTR("PST\n" POST_SERVER_ADDRESS "\n/"
                     "sensors.php\n{\"timestamp\":\"20%02d-%02d-%02dT%02d:%02d:%"
                     "02d\",\"temperature\":%s,\"humidity\":%s,\"pressure\":%s,"
                     "\"photo\":%s,\"pm2_5\":%s, \"aqi2_5\":%s}\n"),
@@ -811,7 +819,7 @@ void websiteFromURL_handler() {
   static uint8_t pck_len = 0;
   switch (queue.stage) {
   case QUEUE_EXEC:
-    queue_execute(F("URL\ntwonky.centralpark.lan\n"));
+    queue_execute(F("URL\n" POST_SERVER_ADDRESS "\n"));
     break;
   case QUEUE_ACT: {
     unsigned long timeout = millis();

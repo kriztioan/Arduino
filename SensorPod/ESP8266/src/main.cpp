@@ -320,7 +320,7 @@ void relayWeatherFC() {
   const char *host = "api.weather.gov",
              *path = "/stations/LOAC1/observations/latest",
              *fingerprint =
-                 "25 B9 6E 17 C4 8C E7 E6 27 8D EC 80 53 B9 42 0D EA AC 3E 94";
+                 "BE 2D 0C 31 CE 57 18 38 1D BC 56 68 F1 C6 27 E7 22 60 57 E2";
 
   client.setFingerprint(fingerprint);
 
